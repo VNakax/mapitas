@@ -180,7 +180,8 @@ function isSupportedMap(filePath) {
 async function buildSceneData(filePath) {
   const normalizedPath = normalizePath(filePath);
   const relativePath = getRelativePath(normalizedPath);
-  const dimensions = await getTextureDimensions(normalizedPath);
+  const assetPath = getAssetPath(normalizedPath);
+  const dimensions = await getTextureDimensions(assetPath);
   const sceneName = getSceneNameFromPath(normalizedPath);
 
   return {
@@ -188,7 +189,7 @@ async function buildSceneData(filePath) {
     width: dimensions.width,
     height: dimensions.height,
     background: {
-      src: normalizedPath
+      src: assetPath
     },
     grid: {
       size: DEFAULT_GRID_SIZE,
@@ -240,13 +241,14 @@ async function getTextureDimensions(src) {
 
 function buildLightweightUpdate(existing, sourcePath) {
   const nextName = getSceneNameFromPath(sourcePath);
-  const currentSource = normalizePath(existing.background?.src ?? "");
   const currentPath = normalizePath(existing.getFlag(MODULE_ID, "sourcePath") ?? "");
   const nextPath = normalizePath(sourcePath);
+  const nextAssetPath = getAssetPath(nextPath);
+  const currentSource = normalizePath(existing.background?.src ?? "");
 
   const changed =
     existing.name !== nextName ||
-    currentSource !== nextPath ||
+    currentSource !== normalizePath(nextAssetPath) ||
     currentPath !== nextPath;
 
   if (!changed) return null;
@@ -255,7 +257,7 @@ function buildLightweightUpdate(existing, sourcePath) {
     _id: existing.id,
     name: nextName,
     background: {
-      src: nextPath
+      src: nextAssetPath
     },
     flags: {
       [MODULE_ID]: {
@@ -304,4 +306,9 @@ async function batchDeleteDocuments(ids, pack) {
 
 function normalizePath(path) {
   return String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
+}
+
+function getAssetPath(path) {
+  const normalizedPath = normalizePath(path);
+  return foundry.utils.getRoute(foundry.utils.encodeURL(normalizedPath));
 }
