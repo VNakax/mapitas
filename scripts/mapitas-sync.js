@@ -3,8 +3,8 @@ const PACK_NAME = "mapitas-scenes";
 const PACK_LABEL = "Mapitas";
 const MAP_ROOT = "Mapitas";
 const DEFAULT_GRID_SIZE = 100;
-const BROWSE_DELAY_MS = 120;
-const WRITE_DELAY_MS = 300;
+const BROWSE_DELAY_MS = 140;
+const WRITE_DELAY_MS = 350;
 const DELETE_BATCH_SIZE = 5;
 const WRITE_BATCH_SIZE = 1;
 const PROGRESS_STEP = 5;
@@ -122,7 +122,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
 
   const runner = (async () => {
     try {
-      reportProgress({ notify, message: "Mapitas: iniciando sincronizacao...", force: true, pct: 1 });
+      reportProgress({ notify, message: "Mapitas: preparando sincronizacao...", force: true, pct: 1 });
 
       const pack = await ensureCompendium();
       const existingDocs = await pack.getDocuments();
@@ -162,12 +162,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         if (sourcePath) existingByPath.set(normalizePath(sourcePath), doc);
       }
 
-      reportProgress({
-        notify,
-        message: `Mapitas: ${files.length} arquivos encontrados. Comparando com o compendium...`,
-        force: true,
-        pct: 40
-      });
+      reportProgress({ notify, message: formatImportProgress(0, files.length), force: true, pct: 40 });
 
       const targetPaths = new Set(files.map((file) => normalizePath(file)));
       const toDelete = [];
@@ -212,16 +207,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
 
         if (((index + 1) % PROGRESS_STEP) === 0 || (index + 1) === files.length) {
           const pct = getLinearProgress(index + 1, files.length, 50, 98);
-          reportProgress({
-            notify,
-            message: [
-              `Mapitas: analisados ${index + 1}/${files.length} mapas.`,
-              `Criados: ${stats.created}.`,
-              `Atualizados: ${stats.updated}.`,
-              `Removidos: ${stats.removed}.`
-            ].join(" "),
-            pct
-          });
+          reportProgress({ notify, message: formatImportProgress(stats.created + stats.updated, files.length), pct });
         }
       }
 
@@ -282,7 +268,7 @@ async function browseMapFiles(root, { notify = false, startPct = 0, endPct = 25 
     if (scanned === 1 || (scanned % PROGRESS_STEP) === 0) {
       reportProgress({
         notify,
-        message: `Mapitas: varrendo pastas... ${scanned} pasta(s) visitada(s), ${discovered.length} arquivo(s) encontrado(s).`,
+        message: formatBrowseProgress(discovered.length),
         pct: getBrowseProgress(scanned, queue.length, startPct, endPct)
       });
     }
@@ -422,7 +408,7 @@ async function flushCreateBatch(queue, pack, stats, notify, processed = 0, total
   stats.created += chunk.length;
   reportProgress({
     notify,
-    message: `Mapitas: criando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`,
+    message: formatImportProgress(stats.created + stats.updated, total),
     pct: getLinearProgress(processed, total, 50, 98)
   });
   await wait(WRITE_DELAY_MS);
@@ -435,7 +421,7 @@ async function flushUpdateBatch(queue, pack, stats, notify, processed = 0, total
   stats.updated += chunk.length;
   reportProgress({
     notify,
-    message: `Mapitas: atualizando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`,
+    message: formatImportProgress(stats.created + stats.updated, total),
     pct: getLinearProgress(processed, total, 50, 98)
   });
   await wait(WRITE_DELAY_MS);
@@ -508,7 +494,6 @@ function normalizeNameToken(value) {
 }
 
 function reportProgress({ notify, message, force = false, pct = null }) {
-  console.info(`${MODULE_ID} | ${message}`);
   updateProgressBar({ message, pct });
   if (!notify) return;
 
@@ -604,7 +589,7 @@ function clearProgressBar() {
   delete globalThis[`${MODULE_ID}-progress-bar`];
   if (typeof SceneNavigation?.displayProgressBar !== "function") return;
   SceneNavigation.displayProgressBar({
-    label: "Mapitas",
+    label: "Mapitas: pronto",
     pct: 100
   });
 }
@@ -618,4 +603,12 @@ function getLinearProgress(current, total, startPct, endPct) {
 function getBrowseProgress(scanned, queueLength, startPct, endPct) {
   const estimatedTotal = Math.max(scanned + queueLength, scanned, 1);
   return getLinearProgress(scanned, estimatedTotal, startPct, endPct);
+}
+
+function formatBrowseProgress(foundCount) {
+  return `Mapitas: varrendo pastas... ${foundCount} mapa(s) encontrado(s).`;
+}
+
+function formatImportProgress(importedCount, totalCount) {
+  return `Mapitas: ${importedCount} mapa(s) importado(s) de ${totalCount} encontrado(s).`;
 }
