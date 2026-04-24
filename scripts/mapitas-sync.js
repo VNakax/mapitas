@@ -180,8 +180,7 @@ function isSupportedMap(filePath) {
 async function buildSceneData(filePath) {
   const normalizedPath = normalizePath(filePath);
   const relativePath = getRelativePath(normalizedPath);
-  const assetPath = getAssetPath(normalizedPath);
-  const dimensions = await getTextureDimensions(assetPath);
+  const dimensions = await getTextureDimensions(normalizedPath);
   const sceneName = getSceneNameFromPath(normalizedPath);
 
   return {
@@ -189,7 +188,7 @@ async function buildSceneData(filePath) {
     width: dimensions.width,
     height: dimensions.height,
     background: {
-      src: assetPath
+      src: normalizedPath
     },
     grid: {
       size: DEFAULT_GRID_SIZE,
@@ -210,32 +209,7 @@ async function buildSceneData(filePath) {
 }
 
 async function getTextureDimensions(src) {
-  try {
-    const texture = await foundry.canvas.loadTexture(src);
-    const baseTexture = texture?.baseTexture ?? texture;
-    const resource = baseTexture?.resource;
-    const width = Math.round(
-      resource?.source?.videoWidth ||
-      resource?.source?.naturalWidth ||
-      texture?.width ||
-      baseTexture?.realWidth ||
-      baseTexture?.width ||
-      0
-    );
-    const height = Math.round(
-      resource?.source?.videoHeight ||
-      resource?.source?.naturalHeight ||
-      texture?.height ||
-      baseTexture?.realHeight ||
-      baseTexture?.height ||
-      0
-    );
-
-    if (width > 0 && height > 0) return { width, height };
-  } catch (error) {
-    console.warn(`${MODULE_ID} | Nao foi possivel ler dimensoes de ${src}`, error);
-  }
-
+  if (isVideoPath(src)) return { width: 4000, height: 3000 };
   return { width: 4000, height: 3000 };
 }
 
@@ -243,12 +217,11 @@ function buildLightweightUpdate(existing, sourcePath) {
   const nextName = getSceneNameFromPath(sourcePath);
   const currentPath = normalizePath(existing.getFlag(MODULE_ID, "sourcePath") ?? "");
   const nextPath = normalizePath(sourcePath);
-  const nextAssetPath = getAssetPath(nextPath);
   const currentSource = normalizePath(existing.background?.src ?? "");
 
   const changed =
     existing.name !== nextName ||
-    currentSource !== normalizePath(nextAssetPath) ||
+    currentSource !== nextPath ||
     currentPath !== nextPath;
 
   if (!changed) return null;
@@ -257,7 +230,7 @@ function buildLightweightUpdate(existing, sourcePath) {
     _id: existing.id,
     name: nextName,
     background: {
-      src: nextAssetPath
+      src: nextPath
     },
     flags: {
       [MODULE_ID]: {
@@ -308,7 +281,7 @@ function normalizePath(path) {
   return String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
 }
 
-function getAssetPath(path) {
-  const normalizedPath = normalizePath(path);
-  return foundry.utils.getRoute(foundry.utils.encodeURL(normalizedPath));
+function isVideoPath(path) {
+  const lower = normalizePath(path).toLowerCase();
+  return lower.endsWith(".webm") || lower.endsWith(".mp4") || lower.endsWith(".m4v") || lower.endsWith(".mov");
 }
