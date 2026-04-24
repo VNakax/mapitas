@@ -3,7 +3,69 @@ const PACK_NAME = "mapitas-scenes";
 const PACK_LABEL = "Mapitas";
 const MAP_ROOT = "Mapitas";
 const DEFAULT_GRID_SIZE = 100;
-const BATCH_SIZE = 25;
+const BROWSE_DELAY_MS = 60;
+const WRITE_DELAY_MS = 150;
+const DELETE_BATCH_SIZE = 20;
+const WRITE_BATCH_SIZE = 5;
+const PROGRESS_STEP = 10;
+const ASSET_CONTAINER_NAMES = new Set(["assets", "files", "images", "img", "map", "maps", "media"]);
+const IGNORED_NAME_TOKENS = new Set([
+  "alt",
+  "art",
+  "base",
+  "color",
+  "colour",
+  "export",
+  "final",
+  "full",
+  "grid",
+  "gridded",
+  "gridless",
+  "high",
+  "highlight",
+  "highlights",
+  "hq",
+  "jpg",
+  "jpeg",
+  "light",
+  "lights",
+  "map",
+  "maps",
+  "nighttime",
+  "nogrid",
+  "original",
+  "png",
+  "preview",
+  "scene",
+  "token",
+  "ungrid",
+  "ungridded",
+  "variant",
+  "vtt",
+  "webp"
+]);
+const VARIANT_LABELS = new Map([
+  ["day", "Day"],
+  ["night", "Night"],
+  ["dawn", "Dawn"],
+  ["dusk", "Dusk"],
+  ["sunrise", "Sunrise"],
+  ["sunset", "Sunset"],
+  ["storm", "Storm"],
+  ["rain", "Rain"],
+  ["snow", "Snow"],
+  ["winter", "Winter"],
+  ["summer", "Summer"],
+  ["spring", "Spring"],
+  ["autumn", "Autumn"],
+  ["fall", "Autumn"],
+  ["gridless", "Gridless"],
+  ["ungridded", "Gridless"],
+  ["gridded", "Gridded"],
+  ["grid", "Gridded"],
+  ["player", "Player"],
+  ["gm", "GM"]
+]);
 const SUPPORTED_EXTENSIONS = new Set([
   ".apng",
   ".avif",
@@ -52,9 +114,9 @@ async function syncMapitasCompendium({ notify = false } = {}) {
 
   const runner = (async () => {
     try {
-      if (notify) ui.notifications.info("Mapitas: sincronizando compendium de cenas...");
+      reportProgress({ notify, message: "Mapitas: iniciando sincronizacao...", force: true });
 
-      const files = await browseMapFiles(MAP_ROOT);
+      const files = await browseMapFiles(MAP_ROOT, { notify });
       if (!files.length) {
         const message = "Mapitas: nenhum arquivo suportado foi encontrado em Data/Mapitas.";
         ui.notifications.warn(message);
@@ -71,6 +133,12 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         if (sourcePath) existingByPath.set(normalizePath(sourcePath), doc);
       }
 
+      reportProgress({
+        notify,
+        message: `Mapitas: ${files.length} arquivos encontrados. Comparando com o compendium...`,
+        force: true
+      });
+
       const targetPaths = new Set(files.map((file) => normalizePath(file)));
       const toDelete = [];
       for (const doc of existingDocs) {
@@ -78,38 +146,75 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         if (sourcePath && !targetPaths.has(sourcePath)) toDelete.push(doc.id);
       }
 
-      const toCreate = [];
-      const toUpdate = [];
+      const stats = {
+        files: files.length,
+        created: 0,
+        updated: 0,
+        removed: 0
+      };
 
-      for (const file of files) {
+      await processDocumentBatches({
+        items: toDelete,
+        batchSize: DELETE_BATCH_SIZE,
+        delayMs: WRITE_DELAY_MS,
+        notify,
+        label: "Removendo cenas antigas",
+        processor: async (chunk) => {
+          await Scene.deleteDocuments(chunk, { pack: pack.collection });
+          stats.removed += chunk.length;
+        }
+      });
+
+      const pendingCreates = [];
+      const pendingUpdates = [];
+
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
         const normalizedPath = normalizePath(file);
         const existing = existingByPath.get(normalizedPath);
 
         if (!existing) {
-          const sceneData = await buildSceneData(file);
-          toCreate.push(sceneData);
-          continue;
+          pendingCreates.push(await buildSceneData(file));
+        } else {
+          const update = buildLightweightUpdate(existing, normalizedPath);
+          if (update) pendingUpdates.push(update);
         }
 
-        const update = buildLightweightUpdate(existing, normalizedPath);
-        if (update) toUpdate.push(update);
+        if (pendingCreates.length >= WRITE_BATCH_SIZE) {
+          await flushCreateBatch(pendingCreates, pack.collection, stats, notify);
+        }
+
+        if (pendingUpdates.length >= WRITE_BATCH_SIZE) {
+          await flushUpdateBatch(pendingUpdates, pack.collection, stats, notify);
+        }
+
+        if (((index + 1) % PROGRESS_STEP) === 0 || (index + 1) === files.length) {
+          reportProgress({
+            notify,
+            message: [
+              `Mapitas: analisados ${index + 1}/${files.length} mapas.`,
+              `Criados: ${stats.created}.`,
+              `Atualizados: ${stats.updated}.`,
+              `Removidos: ${stats.removed}.`
+            ].join(" ")
+          });
+        }
       }
 
-      await batchDeleteDocuments(toDelete, pack.collection);
-      await batchCreateDocuments(toCreate, pack.collection);
-      await batchUpdateDocuments(toUpdate, pack.collection);
+      await flushCreateBatch(pendingCreates, pack.collection, stats, notify);
+      await flushUpdateBatch(pendingUpdates, pack.collection, stats, notify);
 
       const summary = [
         `Mapitas sincronizado com sucesso.`,
         `Arquivos encontrados: ${files.length}.`,
-        `Criados: ${toCreate.length}.`,
-        `Atualizados: ${toUpdate.length}.`,
-        `Removidos: ${toDelete.length}.`
+        `Criados: ${stats.created}.`,
+        `Atualizados: ${stats.updated}.`,
+        `Removidos: ${stats.removed}.`
       ].join(" ");
 
       await game.settings.set(MODULE_ID, "lastSyncSummary", summary);
-      if (notify) ui.notifications.info(summary);
-      return { files: files.length, created: toCreate.length, updated: toUpdate.length, removed: toDelete.length };
+      reportProgress({ notify, message: summary, force: true });
+      return stats;
     } catch (error) {
       console.error(`${MODULE_ID} | Erro ao sincronizar Mapitas`, error);
       const message = "Mapitas: falha ao sincronizar. Veja o console do navegador para detalhes.";
@@ -118,6 +223,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
       throw error;
     } finally {
       delete globalThis[`${MODULE_ID}-sync-lock`];
+      delete globalThis[`${MODULE_ID}-progress-state`];
     }
   })();
 
@@ -138,15 +244,24 @@ async function ensureCompendium() {
   return pack;
 }
 
-async function browseMapFiles(root) {
+async function browseMapFiles(root, { notify = false } = {}) {
   const queue = [normalizePath(root)];
   const discovered = [];
   const visited = new Set();
+  let scanned = 0;
 
   while (queue.length) {
     const current = queue.shift();
     if (!current || visited.has(current)) continue;
     visited.add(current);
+    scanned += 1;
+
+    if (scanned === 1 || (scanned % PROGRESS_STEP) === 0) {
+      reportProgress({
+        notify,
+        message: `Mapitas: varrendo pastas... ${scanned} pasta(s) visitada(s), ${discovered.length} arquivo(s) encontrado(s).`
+      });
+    }
 
     let result;
     try {
@@ -163,6 +278,8 @@ async function browseMapFiles(root) {
     for (const file of result.files ?? []) {
       if (isSupportedMap(file)) discovered.push(normalizePath(file));
     }
+
+    await wait(BROWSE_DELAY_MS);
   }
 
   discovered.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
@@ -243,10 +360,14 @@ function buildLightweightUpdate(existing, sourcePath) {
 }
 
 function getSceneNameFromPath(filePath) {
-  return getRelativePath(filePath)
-    .replace(/\.[^.]+$/u, "")
-    .split("/")
-    .join(" / ");
+  const relativePath = getRelativePath(filePath).replace(/\.[^.]+$/u, "");
+  const segments = relativePath.split("/").filter(Boolean);
+  const fileBaseName = segments.at(-1) ?? relativePath;
+  const folderBaseName = findBestFolderName(segments.slice(0, -1));
+  const primaryName = folderBaseName || formatFileBaseName(fileBaseName) || "Mapa";
+  const variants = extractVariants(fileBaseName);
+
+  return variants.length ? `${primaryName} (${variants.join(", ")})` : primaryName;
 }
 
 function getRelativePath(filePath) {
@@ -256,25 +377,67 @@ function getRelativePath(filePath) {
     : normalizedPath;
 }
 
-async function batchCreateDocuments(documents, pack) {
-  for (let index = 0; index < documents.length; index += BATCH_SIZE) {
-    const chunk = documents.slice(index, index + BATCH_SIZE);
-    await Scene.createDocuments(chunk, { pack });
+async function processDocumentBatches({ items, batchSize, delayMs, notify, label, processor }) {
+  for (let index = 0; index < items.length; index += batchSize) {
+    const chunk = items.slice(index, index + batchSize);
+    await processor(chunk);
+    reportProgress({
+      notify,
+      message: `Mapitas: ${label} ${Math.min(index + chunk.length, items.length)}/${items.length}...`
+    });
+    await wait(delayMs);
   }
 }
 
-async function batchUpdateDocuments(documents, pack) {
-  for (let index = 0; index < documents.length; index += BATCH_SIZE) {
-    const chunk = documents.slice(index, index + BATCH_SIZE);
-    await Scene.updateDocuments(chunk, { pack });
+async function flushCreateBatch(queue, pack, stats, notify) {
+  if (!queue.length) return;
+  const chunk = queue.splice(0, queue.length);
+  await Scene.createDocuments(chunk, { pack });
+  stats.created += chunk.length;
+  reportProgress({
+    notify,
+    message: `Mapitas: criando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`
+  });
+  await wait(WRITE_DELAY_MS);
+}
+
+async function flushUpdateBatch(queue, pack, stats, notify) {
+  if (!queue.length) return;
+  const chunk = queue.splice(0, queue.length);
+  await Scene.updateDocuments(chunk, { pack });
+  stats.updated += chunk.length;
+  reportProgress({
+    notify,
+    message: `Mapitas: atualizando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`
+  });
+  await wait(WRITE_DELAY_MS);
+}
+
+function findBestFolderName(segments) {
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    const normalized = normalizeNameToken(segment);
+    if (!normalized || ASSET_CONTAINER_NAMES.has(normalized)) continue;
+    return formatLabel(segment);
   }
 }
 
-async function batchDeleteDocuments(ids, pack) {
-  for (let index = 0; index < ids.length; index += BATCH_SIZE) {
-    const chunk = ids.slice(index, index + BATCH_SIZE);
-    await Scene.deleteDocuments(chunk, { pack });
+function formatFileBaseName(fileBaseName) {
+  const words = tokenizeName(fileBaseName)
+    .filter((word) => !IGNORED_NAME_TOKENS.has(word))
+    .filter((word) => !VARIANT_LABELS.has(word));
+
+  if (!words.length) return "";
+  return titleCaseWords(words);
+}
+
+function extractVariants(fileBaseName) {
+  const variants = [];
+  for (const token of tokenizeName(fileBaseName)) {
+    const label = VARIANT_LABELS.get(token);
+    if (label && !variants.includes(label)) variants.push(label);
   }
+  return variants;
 }
 
 function normalizePath(path) {
@@ -284,4 +447,51 @@ function normalizePath(path) {
 function isVideoPath(path) {
   const lower = normalizePath(path).toLowerCase();
   return lower.endsWith(".webm") || lower.endsWith(".mp4") || lower.endsWith(".m4v") || lower.endsWith(".mov");
+}
+
+function tokenizeName(value) {
+  return String(value ?? "")
+    .replace(/\.[^.]+$/u, "")
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .replace(/[_-]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLowerCase()
+    .split(" ")
+    .filter(Boolean);
+}
+
+function formatLabel(value) {
+  const words = tokenizeName(value).filter((word) => !IGNORED_NAME_TOKENS.has(word));
+  return words.length ? titleCaseWords(words) : titleCaseWords(tokenizeName(value));
+}
+
+function titleCaseWords(words) {
+  return words
+    .map((word) => {
+      if (word === "gm") return "GM";
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+function normalizeNameToken(value) {
+  return tokenizeName(value).join(" ");
+}
+
+function reportProgress({ notify, message, force = false }) {
+  console.info(`${MODULE_ID} | ${message}`);
+  if (!notify) return;
+
+  const state = globalThis[`${MODULE_ID}-progress-state`] ?? { lastMessage: "", lastAt: 0 };
+  const now = Date.now();
+  if (!force && state.lastMessage === message) return;
+  if (!force && (now - state.lastAt) < 900) return;
+
+  globalThis[`${MODULE_ID}-progress-state`] = { lastMessage: message, lastAt: now };
+  ui.notifications.info(message);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

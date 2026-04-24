@@ -23,6 +23,9 @@ O campo `download` do manifesto aponta para o asset de release `modulo-dos-mapit
 - O compendium criado e do tipo `Scene` e pertence ao mundo atual.
 - Cada arquivo gera uma cena importavel apontando para o asset original em `Data/Mapitas`.
 - Novos arquivos sao adicionados e arquivos removidos saem do compendium na proxima sincronizacao.
+- A sincronizacao ocorre em lotes menores com pausas curtas entre operacoes para reduzir picos de requests no Foundry.
+- Durante a sincronizacao, o modulo exibe mensagens de progresso para indicar varredura de pastas e importacao das cenas.
+- O nome das cenas prioriza a pasta amigavel do mapa e acrescenta apenas variantes uteis, como `Night` ou `Gridless`.
 
 ## Observacoes
 
