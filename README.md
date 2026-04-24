@@ -28,6 +28,7 @@ O campo `download` do manifesto aponta para o asset de release `modulo-dos-mapit
 - Durante a sincronizacao, o modulo mantem uma barra fixa no topo com progresso resumido, sem log detalhado por mapa.
 - O nome das cenas prioriza a pasta amigavel do mapa e acrescenta apenas variantes uteis, como `Night` ou `Gridless`.
 - O nome exibido da cena decodifica segmentos como `%20` para que espacos e outros caracteres aparecam de forma legivel.
+- Para mapas em imagem, o modulo reutiliza o proprio arquivo como `thumb` da cena para evitar geracao automatica de thumbnail quando possivel.
 
 ## Observacoes
 

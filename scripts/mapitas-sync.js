@@ -141,7 +141,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
           startPct: 2,
           endPct: 8,
           processor: async (chunk) => {
-            await Scene.deleteDocuments(chunk, { pack: pack.collection });
+            await Scene.deleteDocuments(chunk, { pack: pack.collection, render: false });
           }
         });
         workingDocs = [];
@@ -187,7 +187,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         startPct: 40,
         endPct: 50,
         processor: async (chunk) => {
-          await Scene.deleteDocuments(chunk, { pack: pack.collection });
+          await Scene.deleteDocuments(chunk, { pack: pack.collection, render: false });
           stats.removed += chunk.length;
         }
       });
@@ -314,6 +314,7 @@ async function buildSceneData(filePath) {
     name: sceneName,
     width: dimensions.width,
     height: dimensions.height,
+    thumb: getSceneThumbPath(normalizedPath),
     background: {
       src: normalizedPath
     },
@@ -345,17 +346,21 @@ function buildLightweightUpdate(existing, sourcePath) {
   const currentPath = normalizePath(existing.getFlag(MODULE_ID, "sourcePath") ?? "");
   const nextPath = normalizePath(sourcePath);
   const currentSource = normalizePath(existing.background?.src ?? "");
+  const nextThumb = getSceneThumbPath(nextPath);
+  const currentThumb = normalizePath(existing.thumb ?? "");
 
   const changed =
     existing.name !== nextName ||
     currentSource !== nextPath ||
-    currentPath !== nextPath;
+    currentPath !== nextPath ||
+    currentThumb !== normalizePath(nextThumb ?? "");
 
   if (!changed) return null;
 
   return {
     _id: existing.id,
     name: nextName,
+    thumb: nextThumb,
     background: {
       src: nextPath
     },
@@ -404,7 +409,7 @@ async function processDocumentBatches({ items, batchSize, delayMs, notify, label
 async function flushCreateBatch(queue, pack, stats, notify, processed = 0, total = 0) {
   if (!queue.length) return;
   const chunk = queue.splice(0, queue.length);
-  await Scene.createDocuments(chunk, { pack });
+  await Scene.createDocuments(chunk, { pack, render: false });
   stats.created += chunk.length;
   reportProgress({
     notify,
@@ -417,7 +422,7 @@ async function flushCreateBatch(queue, pack, stats, notify, processed = 0, total
 async function flushUpdateBatch(queue, pack, stats, notify, processed = 0, total = 0) {
   if (!queue.length) return;
   const chunk = queue.splice(0, queue.length);
-  await Scene.updateDocuments(chunk, { pack });
+  await Scene.updateDocuments(chunk, { pack, render: false });
   stats.updated += chunk.length;
   reportProgress({
     notify,
@@ -461,6 +466,10 @@ function normalizePath(path) {
 function isVideoPath(path) {
   const lower = normalizePath(path).toLowerCase();
   return lower.endsWith(".webm") || lower.endsWith(".mp4") || lower.endsWith(".m4v") || lower.endsWith(".mov");
+}
+
+function isImagePath(path) {
+  return !isVideoPath(path);
 }
 
 function tokenizeName(value) {
@@ -611,4 +620,9 @@ function formatBrowseProgress(foundCount) {
 
 function formatImportProgress(importedCount, totalCount) {
   return `Mapitas: ${importedCount} mapa(s) importado(s) de ${totalCount} encontrado(s).`;
+}
+
+function getSceneThumbPath(path) {
+  const normalizedPath = normalizePath(path);
+  return isImagePath(normalizedPath) ? normalizedPath : null;
 }
