@@ -3,11 +3,11 @@ const PACK_NAME = "mapitas-scenes";
 const PACK_LABEL = "Mapitas";
 const MAP_ROOT = "Mapitas";
 const DEFAULT_GRID_SIZE = 100;
-const BROWSE_DELAY_MS = 60;
-const WRITE_DELAY_MS = 150;
-const DELETE_BATCH_SIZE = 20;
-const WRITE_BATCH_SIZE = 5;
-const PROGRESS_STEP = 10;
+const BROWSE_DELAY_MS = 120;
+const WRITE_DELAY_MS = 300;
+const DELETE_BATCH_SIZE = 5;
+const WRITE_BATCH_SIZE = 1;
+const PROGRESS_STEP = 5;
 const ASSET_CONTAINER_NAMES = new Set(["assets", "files", "images", "img", "map", "maps", "media"]);
 const IGNORED_NAME_TOKENS = new Set([
   "alt",
@@ -97,6 +97,14 @@ Hooks.once("init", () => {
     default: ""
   });
 
+  game.settings.register(MODULE_ID, "initialSyncConfirmed", {
+    name: "Sincronizacao inicial confirmada",
+    scope: "world",
+    config: false,
+    type: Boolean,
+    default: false
+  });
+
   game.modules.get(MODULE_ID).api = {
     syncCompendium: () => syncMapitasCompendium({ notify: true })
   };
@@ -114,9 +122,32 @@ async function syncMapitasCompendium({ notify = false } = {}) {
 
   const runner = (async () => {
     try {
-      reportProgress({ notify, message: "Mapitas: iniciando sincronizacao...", force: true });
+      reportProgress({ notify, message: "Mapitas: iniciando sincronizacao...", force: true, pct: 1 });
 
-      const files = await browseMapFiles(MAP_ROOT, { notify });
+      const pack = await ensureCompendium();
+      const existingDocs = await pack.getDocuments();
+      const initialAction = await ensureInitialSyncApproval({ notify, pack, existingDocs });
+      if (initialAction === "cancel") return null;
+
+      let workingDocs = existingDocs;
+      if (initialAction === "clear") {
+        reportProgress({ notify, message: "Mapitas: limpando compendium antes da primeira sincronizacao...", force: true, pct: 2 });
+        await processDocumentBatches({
+          items: existingDocs.map((doc) => doc.id),
+          batchSize: DELETE_BATCH_SIZE,
+          delayMs: WRITE_DELAY_MS,
+          notify,
+          label: "Limpando compendium",
+          startPct: 2,
+          endPct: 8,
+          processor: async (chunk) => {
+            await Scene.deleteDocuments(chunk, { pack: pack.collection });
+          }
+        });
+        workingDocs = [];
+      }
+
+      const files = await browseMapFiles(MAP_ROOT, { notify, startPct: 8, endPct: 35 });
       if (!files.length) {
         const message = "Mapitas: nenhum arquivo suportado foi encontrado em Data/Mapitas.";
         ui.notifications.warn(message);
@@ -124,11 +155,9 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         return null;
       }
 
-      const pack = await ensureCompendium();
-      const existingDocs = await pack.getDocuments();
       const existingByPath = new Map();
 
-      for (const doc of existingDocs) {
+      for (const doc of workingDocs) {
         const sourcePath = doc.getFlag(MODULE_ID, "sourcePath");
         if (sourcePath) existingByPath.set(normalizePath(sourcePath), doc);
       }
@@ -136,12 +165,13 @@ async function syncMapitasCompendium({ notify = false } = {}) {
       reportProgress({
         notify,
         message: `Mapitas: ${files.length} arquivos encontrados. Comparando com o compendium...`,
-        force: true
+        force: true,
+        pct: 40
       });
 
       const targetPaths = new Set(files.map((file) => normalizePath(file)));
       const toDelete = [];
-      for (const doc of existingDocs) {
+      for (const doc of workingDocs) {
         const sourcePath = normalizePath(doc.getFlag(MODULE_ID, "sourcePath") ?? "");
         if (sourcePath && !targetPaths.has(sourcePath)) toDelete.push(doc.id);
       }
@@ -159,14 +189,13 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         delayMs: WRITE_DELAY_MS,
         notify,
         label: "Removendo cenas antigas",
+        startPct: 40,
+        endPct: 50,
         processor: async (chunk) => {
           await Scene.deleteDocuments(chunk, { pack: pack.collection });
           stats.removed += chunk.length;
         }
       });
-
-      const pendingCreates = [];
-      const pendingUpdates = [];
 
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
@@ -174,21 +203,15 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         const existing = existingByPath.get(normalizedPath);
 
         if (!existing) {
-          pendingCreates.push(await buildSceneData(file));
+          const sceneData = await buildSceneData(file);
+          await flushCreateBatch([sceneData], pack.collection, stats, notify, index + 1, files.length);
         } else {
           const update = buildLightweightUpdate(existing, normalizedPath);
-          if (update) pendingUpdates.push(update);
-        }
-
-        if (pendingCreates.length >= WRITE_BATCH_SIZE) {
-          await flushCreateBatch(pendingCreates, pack.collection, stats, notify);
-        }
-
-        if (pendingUpdates.length >= WRITE_BATCH_SIZE) {
-          await flushUpdateBatch(pendingUpdates, pack.collection, stats, notify);
+          if (update) await flushUpdateBatch([update], pack.collection, stats, notify, index + 1, files.length);
         }
 
         if (((index + 1) % PROGRESS_STEP) === 0 || (index + 1) === files.length) {
+          const pct = getLinearProgress(index + 1, files.length, 50, 98);
           reportProgress({
             notify,
             message: [
@@ -196,13 +219,11 @@ async function syncMapitasCompendium({ notify = false } = {}) {
               `Criados: ${stats.created}.`,
               `Atualizados: ${stats.updated}.`,
               `Removidos: ${stats.removed}.`
-            ].join(" ")
+            ].join(" "),
+            pct
           });
         }
       }
-
-      await flushCreateBatch(pendingCreates, pack.collection, stats, notify);
-      await flushUpdateBatch(pendingUpdates, pack.collection, stats, notify);
 
       const summary = [
         `Mapitas sincronizado com sucesso.`,
@@ -212,8 +233,9 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         `Removidos: ${stats.removed}.`
       ].join(" ");
 
+      await game.settings.set(MODULE_ID, "initialSyncConfirmed", true);
       await game.settings.set(MODULE_ID, "lastSyncSummary", summary);
-      reportProgress({ notify, message: summary, force: true });
+      reportProgress({ notify, message: summary, force: true, pct: 100 });
       return stats;
     } catch (error) {
       console.error(`${MODULE_ID} | Erro ao sincronizar Mapitas`, error);
@@ -224,6 +246,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
     } finally {
       delete globalThis[`${MODULE_ID}-sync-lock`];
       delete globalThis[`${MODULE_ID}-progress-state`];
+      clearProgressBar();
     }
   })();
 
@@ -244,7 +267,7 @@ async function ensureCompendium() {
   return pack;
 }
 
-async function browseMapFiles(root, { notify = false } = {}) {
+async function browseMapFiles(root, { notify = false, startPct = 0, endPct = 25 } = {}) {
   const queue = [normalizePath(root)];
   const discovered = [];
   const visited = new Set();
@@ -259,7 +282,8 @@ async function browseMapFiles(root, { notify = false } = {}) {
     if (scanned === 1 || (scanned % PROGRESS_STEP) === 0) {
       reportProgress({
         notify,
-        message: `Mapitas: varrendo pastas... ${scanned} pasta(s) visitada(s), ${discovered.length} arquivo(s) encontrado(s).`
+        message: `Mapitas: varrendo pastas... ${scanned} pasta(s) visitada(s), ${discovered.length} arquivo(s) encontrado(s).`,
+        pct: getBrowseProgress(scanned, queue.length, startPct, endPct)
       });
     }
 
@@ -360,7 +384,7 @@ function buildLightweightUpdate(existing, sourcePath) {
 }
 
 function getSceneNameFromPath(filePath) {
-  const relativePath = getRelativePath(filePath).replace(/\.[^.]+$/u, "");
+  const relativePath = decodePathForDisplay(getRelativePath(filePath)).replace(/\.[^.]+$/u, "");
   const segments = relativePath.split("/").filter(Boolean);
   const fileBaseName = segments.at(-1) ?? relativePath;
   const folderBaseName = findBestFolderName(segments.slice(0, -1));
@@ -377,38 +401,42 @@ function getRelativePath(filePath) {
     : normalizedPath;
 }
 
-async function processDocumentBatches({ items, batchSize, delayMs, notify, label, processor }) {
+async function processDocumentBatches({ items, batchSize, delayMs, notify, label, startPct = 0, endPct = 100, processor }) {
   for (let index = 0; index < items.length; index += batchSize) {
     const chunk = items.slice(index, index + batchSize);
     await processor(chunk);
+    const processed = Math.min(index + chunk.length, items.length);
     reportProgress({
       notify,
-      message: `Mapitas: ${label} ${Math.min(index + chunk.length, items.length)}/${items.length}...`
+      message: `Mapitas: ${label} ${processed}/${items.length}...`,
+      pct: getLinearProgress(processed, items.length, startPct, endPct)
     });
     await wait(delayMs);
   }
 }
 
-async function flushCreateBatch(queue, pack, stats, notify) {
+async function flushCreateBatch(queue, pack, stats, notify, processed = 0, total = 0) {
   if (!queue.length) return;
   const chunk = queue.splice(0, queue.length);
   await Scene.createDocuments(chunk, { pack });
   stats.created += chunk.length;
   reportProgress({
     notify,
-    message: `Mapitas: criando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`
+    message: `Mapitas: criando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`,
+    pct: getLinearProgress(processed, total, 50, 98)
   });
   await wait(WRITE_DELAY_MS);
 }
 
-async function flushUpdateBatch(queue, pack, stats, notify) {
+async function flushUpdateBatch(queue, pack, stats, notify, processed = 0, total = 0) {
   if (!queue.length) return;
   const chunk = queue.splice(0, queue.length);
   await Scene.updateDocuments(chunk, { pack });
   stats.updated += chunk.length;
   reportProgress({
     notify,
-    message: `Mapitas: atualizando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`
+    message: `Mapitas: atualizando cenas... ${stats.created} criada(s), ${stats.updated} atualizada(s), ${stats.removed} removida(s).`,
+    pct: getLinearProgress(processed, total, 50, 98)
   });
   await wait(WRITE_DELAY_MS);
 }
@@ -479,19 +507,115 @@ function normalizeNameToken(value) {
   return tokenizeName(value).join(" ");
 }
 
-function reportProgress({ notify, message, force = false }) {
+function reportProgress({ notify, message, force = false, pct = null }) {
   console.info(`${MODULE_ID} | ${message}`);
+  updateProgressBar({ message, pct });
   if (!notify) return;
 
   const state = globalThis[`${MODULE_ID}-progress-state`] ?? { lastMessage: "", lastAt: 0 };
   const now = Date.now();
   if (!force && state.lastMessage === message) return;
-  if (!force && (now - state.lastAt) < 900) return;
+  if (!force && (now - state.lastAt) < 3000) return;
 
   globalThis[`${MODULE_ID}-progress-state`] = { lastMessage: message, lastAt: now };
-  ui.notifications.info(message);
+  if (force) ui.notifications.info(message);
 }
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureInitialSyncApproval({ notify, pack, existingDocs }) {
+  if (game.settings.get(MODULE_ID, "initialSyncConfirmed")) return "keep";
+
+  const hasExistingDocs = existingDocs.length > 0;
+  const content = [
+    "<p>Esta e a primeira execucao do modulo neste mundo.</p>",
+    "<p>Deseja iniciar a sincronizacao do compendium <strong>Mapitas</strong> agora?</p>",
+    hasExistingDocs ? `<p>Existem ${existingDocs.length} cena(s) no compendium atual. Voce pode limpar essas cenas antes de importar novamente.</p>` : ""
+  ].join("");
+
+  const action = await new Promise((resolve) => {
+    const buttons = {
+      cancel: {
+        label: "Cancelar",
+        callback: () => resolve("cancel")
+      },
+      keep: {
+        label: "Sincronizar",
+        callback: () => resolve("keep")
+      }
+    };
+
+    if (hasExistingDocs) {
+      buttons.clear = {
+        label: "Limpar e Sincronizar",
+        callback: () => resolve("clear")
+      };
+    }
+
+    new Dialog({
+      title: "Mapitas: primeira sincronizacao",
+      content,
+      buttons,
+      default: hasExistingDocs ? "clear" : "keep",
+      close: () => resolve("cancel")
+    }).render(true);
+  });
+
+  if (action === "cancel") {
+    const message = "Mapitas: sincronizacao inicial cancelada pelo GM.";
+    if (notify) ui.notifications.warn(message);
+    await game.settings.set(MODULE_ID, "lastSyncSummary", message);
+    return "cancel";
+  }
+
+  return action;
+}
+
+function decodePathForDisplay(path) {
+  return normalizePath(path)
+    .split("/")
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join("/");
+}
+
+function updateProgressBar({ message, pct }) {
+  const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : null;
+  globalThis[`${MODULE_ID}-progress-bar`] = {
+    label: message,
+    pct: safePct ?? globalThis[`${MODULE_ID}-progress-bar`]?.pct ?? 0
+  };
+
+  if (typeof SceneNavigation?.displayProgressBar !== "function") return;
+  SceneNavigation.displayProgressBar({
+    label: message,
+    pct: globalThis[`${MODULE_ID}-progress-bar`].pct
+  });
+}
+
+function clearProgressBar() {
+  delete globalThis[`${MODULE_ID}-progress-bar`];
+  if (typeof SceneNavigation?.displayProgressBar !== "function") return;
+  SceneNavigation.displayProgressBar({
+    label: "Mapitas",
+    pct: 100
+  });
+}
+
+function getLinearProgress(current, total, startPct, endPct) {
+  if (!total) return startPct;
+  const ratio = Math.max(0, Math.min(1, current / total));
+  return startPct + ((endPct - startPct) * ratio);
+}
+
+function getBrowseProgress(scanned, queueLength, startPct, endPct) {
+  const estimatedTotal = Math.max(scanned + queueLength, scanned, 1);
+  return getLinearProgress(scanned, estimatedTotal, startPct, endPct);
 }

@@ -2,14 +2,14 @@
   "id": "modulo-dos-mapitas",
   "title": "Modulo dos Mapitas",
   "description": "Sincroniza a pasta Data/Mapitas para um compendium de cenas importaveis no mundo atual.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
     "minimum": "13",
     "verified": "13.350"
   },
   "url": "https://github.com/VNakax/mapitas",
   "manifest": "https://raw.githubusercontent.com/VNakax/mapitas/main/module.json",
-  "download": "https://github.com/VNakax/mapitas/releases/download/v1.1.0/modulo-dos-mapitas.zip",
+  "download": "https://github.com/VNakax/mapitas/releases/download/v1.2.0/modulo-dos-mapitas.zip",
   "bugs": "https://github.com/VNakax/mapitas/issues",
   "changelog": "https://github.com/VNakax/mapitas/releases",
   "readme": "README.md",
