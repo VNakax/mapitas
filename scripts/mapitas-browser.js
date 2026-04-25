@@ -14,19 +14,38 @@ Hooks.once("init", () => {
 
 Hooks.on("renderSceneDirectory", (app, html) => {
   if (!game.user?.isGM) return;
+  installDirectoryButton(resolveHtmlRoot(app, html));
+});
+
+Hooks.on("renderSidebar", (app, html) => {
+  if (!game.user?.isGM) return;
   const root = resolveHtmlRoot(app, html);
   if (!root) return;
-  if (root.querySelector(".mapitas-open-browser")) return;
 
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "mapitas-open-browser";
-  button.innerHTML = `<i class="fas fa-map"></i> Mapitas`;
-  button.addEventListener("click", () => openMapitasBrowser());
+  const sceneTab = root.querySelector("[data-tab='scenes'], .tab[data-tab='scenes'], #scenes");
+  installDirectoryButton(sceneTab);
+});
 
-  const footer = root.querySelector(".directory-footer");
-  if (footer) footer.prepend(button);
-  else root.prepend(button);
+Hooks.on("getSceneControlButtons", (controls) => {
+  if (!game.user?.isGM) return;
+
+  const target =
+    controls.tokens ??
+    controls.notes ??
+    Object.values(controls)[0];
+
+  if (!target) return;
+  target.tools ??= {};
+  if (target.tools.mapitasBrowser) return;
+
+  target.tools.mapitasBrowser = {
+    name: "mapitasBrowser",
+    title: "Mapitas Browser",
+    icon: "fas fa-map",
+    button: true,
+    visible: true,
+    onChange: () => openMapitasBrowser()
+  };
 });
 
 function openMapitasBrowser() {
@@ -342,6 +361,32 @@ async function ensureWorldSceneFolders(folderPath) {
 
 function normalizePath(path) {
   return String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
+}
+
+function installDirectoryButton(root) {
+  if (!(root instanceof HTMLElement)) return;
+  if (root.querySelector(".mapitas-open-browser")) return;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mapitas-open-browser";
+  button.innerHTML = `<i class="fas fa-map"></i> Mapitas`;
+  button.addEventListener("click", () => openMapitasBrowser());
+
+  const containers = [
+    ".header-actions",
+    ".directory-header",
+    ".action-buttons",
+    ".controls",
+    "header"
+  ];
+
+  const target = containers
+    .map((selector) => root.querySelector(selector))
+    .find((element) => element instanceof HTMLElement);
+
+  if (target) target.append(button);
+  else root.prepend(button);
 }
 
 function resolveHtmlRoot(app, html) {
