@@ -106,7 +106,8 @@ class MapitasBrowser extends Application {
     await this.loadCatalog();
 
     const entries = this.catalog.entries;
-    const visibleEntries = filterEntries(entries, this.state.query, this.state.selectedFolder);
+    const shouldRenderResults = Boolean(this.state.selectedFolder || this.state.query);
+    const visibleEntries = shouldRenderResults ? filterEntries(entries, this.state.query, this.state.selectedFolder) : [];
     const countEntries = filterEntries(entries, this.state.query, "");
     const folders = buildFolderList(entries, countEntries);
     for (const folder of folders) {
@@ -124,6 +125,7 @@ class MapitasBrowser extends Application {
       selectedFolder: this.state.selectedFolder,
       totalEntries: entries.length,
       visibleCount: visibleEntries.length,
+      shouldRenderResults,
       folders,
       scenes: visibleEntries.map((entry) => ({
         ...entry,
@@ -214,12 +216,14 @@ class MapitasBrowser extends Application {
 
     let document;
     if (existing) {
-      document = await existing.update(payload, { render: false });
+      document = await existing.update(payload);
       ui.notifications.info(`Mapitas: cena atualizada: ${entry.name}.`);
     } else {
-      document = await Scene.create(payload, { render: false });
+      document = await Scene.create(payload);
       ui.notifications.info(`Mapitas: cena importada: ${entry.name}.`);
     }
+
+    await refreshSceneDirectory();
 
     return document;
   }
@@ -411,4 +415,10 @@ function resolveHtmlRoot(app, html) {
   if (Array.isArray(fallback) && fallback[0] instanceof HTMLElement) return fallback[0];
 
   return null;
+}
+
+async function refreshSceneDirectory() {
+  const directory = ui.sidebar?.tabs?.scenes;
+  if (!directory?.render) return;
+  await directory.render(true);
 }

@@ -32,6 +32,7 @@
     </aside>
 
     <section class="mapitas-results">
+      {{#if shouldRenderResults}}
       <div class="mapitas-card-grid">
         {{#each scenes}}
         <article class="mapitas-card {{#if selected}}is-selected{{/if}}">
@@ -53,6 +54,9 @@
         </article>
         {{/each}}
       </div>
+      {{else}}
+      <div class="mapitas-empty-state">Selecione uma pasta ou use a busca para carregar as cenas.</div>
+      {{/if}}
     </section>
 
     <aside class="mapitas-detail">
