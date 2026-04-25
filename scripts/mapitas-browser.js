@@ -63,9 +63,13 @@ class MapitasBrowser extends Application {
       selectedFolder: "",
       selectedSceneId: "",
       folderScrollTop: 0,
-      resultsScrollTop: 0
+      resultsScrollTop: 0,
+      focusSearch: false,
+      querySelectionStart: null,
+      querySelectionEnd: null
     };
     this.directoryCache = new Map();
+    this.pendingSearchRender = null;
   }
 
   static get defaultOptions() {
@@ -160,10 +164,25 @@ class MapitasBrowser extends Application {
       });
     }
 
+    const searchInput = html.find("[data-action='search']")[0];
+    if (searchInput && this.state.focusSearch) {
+      searchInput.focus();
+      const start = this.state.querySelectionStart ?? searchInput.value.length;
+      const end = this.state.querySelectionEnd ?? start;
+      searchInput.setSelectionRange(start, end);
+    }
+
     html.find("[data-action='search']").on("input", (event) => {
       this.state.resultsScrollTop = 0;
-      this.state.query = String(event.currentTarget.value ?? "").trim();
-      this.render(false);
+      this.state.focusSearch = true;
+      this.state.query = String(event.currentTarget.value ?? "");
+      this.state.querySelectionStart = event.currentTarget.selectionStart;
+      this.state.querySelectionEnd = event.currentTarget.selectionEnd;
+      this.scheduleSearchRender();
+    });
+
+    html.find("[data-action='search']").on("blur", () => {
+      this.state.focusSearch = false;
     });
 
     html.find("[data-action='select-folder']").on("click", (event) => {
@@ -251,6 +270,14 @@ class MapitasBrowser extends Application {
     }
 
     return files.has(normalizedPath) || files.has(encodeURI(normalizedPath));
+  }
+
+  scheduleSearchRender() {
+    if (this.pendingSearchRender) clearTimeout(this.pendingSearchRender);
+    this.pendingSearchRender = setTimeout(() => {
+      this.pendingSearchRender = null;
+      this.render(false);
+    }, 120);
   }
 }
 
