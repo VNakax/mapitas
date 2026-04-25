@@ -70,7 +70,9 @@ class MapitasBrowser extends Application {
     this.state = {
       query: "",
       selectedFolder: "",
-      selectedSceneId: ""
+      selectedSceneId: "",
+      folderScrollTop: 0,
+      resultsScrollTop: 0
     };
     this.directoryCache = new Map();
   }
@@ -114,7 +116,8 @@ class MapitasBrowser extends Application {
 
     const entries = this.catalog.entries;
     const visibleEntries = filterEntries(entries, this.state.query, this.state.selectedFolder);
-    const folders = buildFolderList(entries, visibleEntries);
+    const countEntries = filterEntries(entries, this.state.query, "");
+    const folders = buildFolderList(entries, countEntries);
     for (const folder of folders) {
       folder.selected = folder.key === this.state.selectedFolder;
     }
@@ -147,13 +150,32 @@ class MapitasBrowser extends Application {
 
   activateListeners(html) {
     super.activateListeners(html);
+    const folderList = html.find(".mapitas-folder-list")[0];
+    const resultsList = html.find(".mapitas-results")[0];
+
+    if (folderList) {
+      folderList.scrollTop = this.state.folderScrollTop ?? 0;
+      folderList.addEventListener("scroll", () => {
+        this.state.folderScrollTop = folderList.scrollTop;
+      });
+    }
+
+    if (resultsList) {
+      resultsList.scrollTop = this.state.resultsScrollTop ?? 0;
+      resultsList.addEventListener("scroll", () => {
+        this.state.resultsScrollTop = resultsList.scrollTop;
+      });
+    }
 
     html.find("[data-action='search']").on("input", (event) => {
+      this.state.resultsScrollTop = 0;
       this.state.query = String(event.currentTarget.value ?? "").trim();
       this.render(false);
     });
 
     html.find("[data-action='select-folder']").on("click", (event) => {
+      this.state.folderScrollTop = folderList?.scrollTop ?? this.state.folderScrollTop;
+      this.state.resultsScrollTop = 0;
       this.state.selectedFolder = String(event.currentTarget.dataset.folder ?? "");
       this.render(false);
     });
@@ -233,7 +255,7 @@ class MapitasBrowser extends Application {
       this.directoryCache.set(parent, files);
     }
 
-    return files.has(normalizedPath);
+    return files.has(normalizedPath) || files.has(encodeURI(normalizedPath));
   }
 }
 
@@ -360,7 +382,12 @@ async function ensureWorldSceneFolders(folderPath) {
 }
 
 function normalizePath(path) {
-  return String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
+  const normalized = String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
+  try {
+    return decodeURIComponent(normalized);
+  } catch {
+    return normalized;
+  }
 }
 
 function installDirectoryButton(root) {
