@@ -24,11 +24,13 @@ O campo `download` do manifesto aponta para o asset de release `modulo-dos-mapit
 - Cada arquivo gera uma cena importavel apontando para o asset original em `Data/Mapitas`.
 - Novos arquivos sao adicionados e arquivos removidos saem do compendium na proxima sincronizacao.
 - Na primeira execucao em cada mundo, o modulo pede confirmacao antes de iniciar e pode limpar o compendium atual antes de reimportar.
+- As cenas sao agrupadas em folders dentro do compendium com base na estrutura util de pastas dos mapas.
 - A sincronizacao ocorre em lotes menores com pausas curtas entre operacoes para reduzir picos de requests no Foundry.
 - Durante a sincronizacao, o modulo mantem uma barra fixa no topo com progresso resumido, sem log detalhado por mapa.
 - O nome das cenas prioriza a pasta amigavel do mapa e acrescenta apenas variantes uteis, como `Night` ou `Gridless`.
 - O nome exibido da cena decodifica segmentos como `%20` para que espacos e outros caracteres aparecam de forma legivel.
 - Para mapas em imagem, o modulo reutiliza o proprio arquivo como `thumb` da cena para evitar geracao automatica de thumbnail quando possivel.
+- Quando existir um JSON de cena compativel ao lado do mapa ou em pastas de metadata conhecidas, o modulo tenta reaproveitar dimensoes, grid e elementos como walls/lights/drawings/notes.
 
 ## Observacoes
 

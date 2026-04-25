@@ -78,6 +78,8 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".webm",
   ".webp"
 ]);
+const SCENE_METADATA_DIRS = ["json/scene", "scene", "scenes", "data", "metadata"];
+const SIDECAR_EXTENSIONS = [".json"];
 
 Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "autoSyncOnReady", {
@@ -156,6 +158,7 @@ async function syncMapitasCompendium({ notify = false } = {}) {
       }
 
       const existingByPath = new Map();
+      const folderState = await ensureCompendiumFolders(pack, files);
 
       for (const doc of workingDocs) {
         const sourcePath = doc.getFlag(MODULE_ID, "sourcePath");
@@ -198,10 +201,10 @@ async function syncMapitasCompendium({ notify = false } = {}) {
         const existing = existingByPath.get(normalizedPath);
 
         if (!existing) {
-          const sceneData = await buildSceneData(file);
+          const sceneData = await buildSceneData(file, folderState);
           await flushCreateBatch([sceneData], pack.collection, stats, notify, index + 1, files.length);
         } else {
-          const update = buildLightweightUpdate(existing, normalizedPath);
+          const update = await buildLightweightUpdate(existing, normalizedPath, folderState);
           if (update) await flushUpdateBatch([update], pack.collection, stats, notify, index + 1, files.length);
         }
 
@@ -232,6 +235,8 @@ async function syncMapitasCompendium({ notify = false } = {}) {
     } finally {
       delete globalThis[`${MODULE_ID}-sync-lock`];
       delete globalThis[`${MODULE_ID}-progress-state`];
+      delete globalThis[`${MODULE_ID}-directory-cache`];
+      delete globalThis[`${MODULE_ID}-metadata-path-cache`];
       clearProgressBar();
     }
   })();
@@ -251,6 +256,51 @@ async function ensureCompendium() {
   });
 
   return pack;
+}
+
+async function ensureCompendiumFolders(pack, files) {
+  const state = {
+    folderByPath: new Map(),
+    folderPathsBySource: new Map()
+  };
+  const existingFolders = Array.from(pack.folders?.contents ?? pack.folders ?? []);
+  for (const folder of existingFolders) {
+    const key = folder.getFlag(MODULE_ID, "folderPath");
+    if (key) state.folderByPath.set(key, folder);
+  }
+
+  const folderPaths = new Set();
+  for (const file of files) {
+    const folderPath = getSceneFolderPath(file);
+    if (folderPath.length) {
+      state.folderPathsBySource.set(normalizePath(file), folderPath);
+      for (let index = 0; index < folderPath.length; index += 1) {
+        folderPaths.add(folderPath.slice(0, index + 1).join("/"));
+      }
+    }
+  }
+
+  const sortedPaths = Array.from(folderPaths).sort((left, right) => left.split("/").length - right.split("/").length || left.localeCompare(right));
+  for (const folderPath of sortedPaths) {
+    if (state.folderByPath.has(folderPath)) continue;
+
+    const segments = folderPath.split("/");
+    const parentPath = segments.slice(0, -1).join("/");
+    const parent = parentPath ? state.folderByPath.get(parentPath) : null;
+    const [created] = await Folder.createDocuments([{
+      name: segments.at(-1),
+      type: "Scene",
+      folder: parent?.id ?? null,
+      flags: {
+        [MODULE_ID]: {
+          folderPath
+        }
+      }
+    }], { pack: pack.collection });
+    if (created) state.folderByPath.set(folderPath, created);
+  }
+
+  return state;
 }
 
 async function browseMapFiles(root, { notify = false, startPct = 0, endPct = 25 } = {}) {
@@ -304,71 +354,109 @@ function isSupportedMap(filePath) {
   return false;
 }
 
-async function buildSceneData(filePath) {
+async function buildSceneData(filePath, folderState) {
   const normalizedPath = normalizePath(filePath);
   const relativePath = getRelativePath(normalizedPath);
-  const dimensions = await getTextureDimensions(normalizedPath);
+  const metadata = await getSceneMetadata(normalizedPath);
+  const dimensions = metadata?.dimensions ?? await getTextureDimensions(normalizedPath);
   const sceneName = getSceneNameFromPath(normalizedPath);
+  const folder = getSceneFolderId(normalizedPath, folderState);
+  const sceneData = metadata?.sceneData ?? {};
 
   return {
+    ...sceneData,
     name: sceneName,
     width: dimensions.width,
     height: dimensions.height,
+    folder,
     thumb: getSceneThumbPath(normalizedPath),
     background: {
+      ...(sceneData.background ?? {}),
       src: normalizedPath
     },
     grid: {
       size: DEFAULT_GRID_SIZE,
       type: CONST.GRID_TYPES.SQUARE,
       distance: 5,
-      units: "ft"
+      units: "ft",
+      ...(sceneData.grid ?? {})
     },
-    navigation: false,
-    tokenVision: false,
+    navigation: sceneData.navigation ?? false,
+    tokenVision: sceneData.tokenVision ?? false,
     flags: {
+      ...(sceneData.flags ?? {}),
       [MODULE_ID]: {
         sourcePath: normalizedPath,
         relativePath,
-        syncedAt: new Date().toISOString()
+        syncedAt: new Date().toISOString(),
+        folderPath: getSceneFolderPath(normalizedPath).join("/")
       }
     }
   };
 }
 
 async function getTextureDimensions(src) {
-  if (isVideoPath(src)) return { width: 4000, height: 3000 };
+  const assetURL = getAssetURL(src);
+  if (isVideoPath(src)) {
+    return readVideoDimensions(assetURL);
+  }
+  if (isImagePath(src)) {
+    return readImageDimensions(assetURL);
+  }
   return { width: 4000, height: 3000 };
 }
 
-function buildLightweightUpdate(existing, sourcePath) {
+async function buildLightweightUpdate(existing, sourcePath, folderState) {
   const nextName = getSceneNameFromPath(sourcePath);
   const currentPath = normalizePath(existing.getFlag(MODULE_ID, "sourcePath") ?? "");
   const nextPath = normalizePath(sourcePath);
   const currentSource = normalizePath(existing.background?.src ?? "");
   const nextThumb = getSceneThumbPath(nextPath);
   const currentThumb = normalizePath(existing.thumb ?? "");
+  const nextFolder = getSceneFolderId(nextPath, folderState);
+  const nextFolderPath = getSceneFolderPath(nextPath).join("/");
+  const currentFolderPath = existing.getFlag(MODULE_ID, "folderPath") ?? "";
+  const metadata = await getSceneMetadata(nextPath);
+  const sceneData = metadata?.sceneData ?? {};
+  const dimensions = metadata?.dimensions ?? await getTextureDimensions(nextPath);
 
   const changed =
     existing.name !== nextName ||
     currentSource !== nextPath ||
     currentPath !== nextPath ||
-    currentThumb !== normalizePath(nextThumb ?? "");
+    currentThumb !== normalizePath(nextThumb ?? "") ||
+    (existing.folder?.id ?? null) !== (nextFolder ?? null) ||
+    currentFolderPath !== nextFolderPath ||
+    existing.width !== dimensions.width ||
+    existing.height !== dimensions.height;
 
   if (!changed) return null;
 
   return {
     _id: existing.id,
     name: nextName,
+    width: dimensions.width,
+    height: dimensions.height,
+    folder: nextFolder,
     thumb: nextThumb,
     background: {
+      ...(sceneData.background ?? {}),
       src: nextPath
     },
+    ...(sceneData.grid ? { grid: sceneData.grid } : {}),
+    ...(sceneData.walls ? { walls: sceneData.walls } : {}),
+    ...(sceneData.lights ? { lights: sceneData.lights } : {}),
+    ...(sceneData.drawings ? { drawings: sceneData.drawings } : {}),
+    ...(sceneData.notes ? { notes: sceneData.notes } : {}),
+    ...(sceneData.tiles ? { tiles: sceneData.tiles } : {}),
+    ...(sceneData.sounds ? { sounds: sceneData.sounds } : {}),
     flags: {
+      ...(sceneData.flags ?? {}),
       [MODULE_ID]: {
         sourcePath: nextPath,
         relativePath: getRelativePath(nextPath),
-        syncedAt: new Date().toISOString()
+        syncedAt: new Date().toISOString(),
+        folderPath: nextFolderPath
       }
     }
   };
@@ -390,6 +478,22 @@ function getRelativePath(filePath) {
   return normalizedPath.startsWith(`${MAP_ROOT}/`)
     ? normalizedPath.slice(MAP_ROOT.length + 1)
     : normalizedPath;
+}
+
+function getSceneFolderPath(filePath) {
+  const segments = decodePathForDisplay(getRelativePath(filePath))
+    .split("/")
+    .slice(0, -1)
+    .map((segment) => formatLabel(segment))
+    .filter(Boolean)
+    .filter((segment) => !ASSET_CONTAINER_NAMES.has(segment.toLowerCase()));
+  return segments;
+}
+
+function getSceneFolderId(filePath, folderState) {
+  if (!folderState) return null;
+  const key = folderState.folderPathsBySource.get(normalizePath(filePath))?.join("/") ?? getSceneFolderPath(filePath).join("/");
+  return key ? folderState.folderByPath.get(key)?.id ?? null : null;
 }
 
 async function processDocumentBatches({ items, batchSize, delayMs, notify, label, startPct = 0, endPct = 100, processor }) {
@@ -470,6 +574,104 @@ function isVideoPath(path) {
 
 function isImagePath(path) {
   return !isVideoPath(path);
+}
+
+async function getSceneMetadata(filePath) {
+  const jsonPath = await findSceneMetadataPath(filePath);
+  if (!jsonPath) return null;
+
+  try {
+    const response = await fetch(getAssetURL(jsonPath));
+    if (!response.ok) return null;
+    const raw = await response.json();
+    return normalizeSceneMetadata(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function findSceneMetadataPath(filePath) {
+  const metadataCache = globalThis[`${MODULE_ID}-metadata-path-cache`] ?? new Map();
+  globalThis[`${MODULE_ID}-metadata-path-cache`] = metadataCache;
+  const cacheKey = normalizePath(filePath);
+  if (metadataCache.has(cacheKey)) return metadataCache.get(cacheKey);
+
+  const normalizedPath = normalizePath(filePath);
+  const basename = normalizedPath.split("/").at(-1)?.replace(/\.[^.]+$/u, "") ?? "";
+  const parent = normalizedPath.slice(0, normalizedPath.lastIndexOf("/"));
+  const relativePath = getRelativePath(normalizedPath);
+  const relativeBase = relativePath.replace(/\.[^.]+$/u, "");
+  const candidatePaths = new Set();
+
+  for (const ext of SIDECAR_EXTENSIONS) {
+    candidatePaths.add(`${parent}/${basename}${ext}`);
+  }
+
+  for (const dir of SCENE_METADATA_DIRS) {
+    candidatePaths.add(`${MAP_ROOT}/${dir}/${slugifyScenePath(relativeBase)}.json`);
+    candidatePaths.add(`${MAP_ROOT}/${dir}/${basename}.json`);
+  }
+
+  for (const candidate of candidatePaths) {
+    if (await fileExists(candidate)) {
+      metadataCache.set(cacheKey, candidate);
+      return candidate;
+    }
+  }
+  metadataCache.set(cacheKey, null);
+  return null;
+}
+
+async function fileExists(path) {
+  const normalizedPath = normalizePath(path);
+  const parent = normalizedPath.slice(0, normalizedPath.lastIndexOf("/"));
+  const filename = normalizedPath.split("/").at(-1);
+  if (!parent || !filename) return false;
+
+  const directoryCache = globalThis[`${MODULE_ID}-directory-cache`] ?? new Map();
+  globalThis[`${MODULE_ID}-directory-cache`] = directoryCache;
+
+  try {
+    let files = directoryCache.get(parent);
+    if (!files) {
+      const result = await FilePicker.browse("data", parent);
+      files = new Set((result.files ?? []).map((file) => normalizePath(file)));
+      directoryCache.set(parent, files);
+    }
+    return files.has(normalizedPath);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeSceneMetadata(raw) {
+  const data = raw?.scene ?? raw?.data ?? raw;
+  if (!data || typeof data !== "object") return null;
+
+  const dimensions = {
+    width: toPositiveInteger(data.width) ?? toPositiveInteger(data?.background?.width) ?? 4000,
+    height: toPositiveInteger(data.height) ?? 3000
+  };
+
+  const sceneData = {};
+  if (data.grid) sceneData.grid = data.grid;
+  if (Array.isArray(data.walls)) sceneData.walls = data.walls;
+  if (Array.isArray(data.lights)) sceneData.lights = data.lights;
+  if (Array.isArray(data.drawings)) sceneData.drawings = data.drawings;
+  if (Array.isArray(data.notes)) sceneData.notes = data.notes;
+  if (Array.isArray(data.tiles)) sceneData.tiles = data.tiles;
+  if (Array.isArray(data.sounds)) sceneData.sounds = data.sounds;
+  if (data.background && typeof data.background === "object") sceneData.background = { ...data.background };
+  if (typeof data.navigation === "boolean") sceneData.navigation = data.navigation;
+  if (typeof data.tokenVision === "boolean") sceneData.tokenVision = data.tokenVision;
+  if (data.flags && typeof data.flags === "object") sceneData.flags = data.flags;
+
+  return { dimensions, sceneData };
+}
+
+function toPositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }
 
 function tokenizeName(value) {
@@ -580,6 +782,10 @@ function decodePathForDisplay(path) {
     .join("/");
 }
 
+function getAssetURL(path) {
+  return foundry.utils.getRoute(foundry.utils.encodeURL(normalizePath(path)));
+}
+
 function updateProgressBar({ message, pct }) {
   const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : null;
   globalThis[`${MODULE_ID}-progress-bar`] = {
@@ -625,4 +831,36 @@ function formatImportProgress(importedCount, totalCount) {
 function getSceneThumbPath(path) {
   const normalizedPath = normalizePath(path);
   return isImagePath(normalizedPath) ? normalizedPath : null;
+}
+
+function slugifyScenePath(path) {
+  return decodePathForDisplay(path)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+}
+
+function readImageDimensions(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({
+      width: Math.round(image.naturalWidth || 4000),
+      height: Math.round(image.naturalHeight || 3000)
+    });
+    image.onerror = () => resolve({ width: 4000, height: 3000 });
+    image.src = src;
+  });
+}
+
+function readVideoDimensions(src) {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => resolve({
+      width: Math.round(video.videoWidth || 4000),
+      height: Math.round(video.videoHeight || 3000)
+    });
+    video.onerror = () => resolve({ width: 4000, height: 3000 });
+    video.src = src;
+  });
 }
