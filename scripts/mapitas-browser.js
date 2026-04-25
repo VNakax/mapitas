@@ -12,20 +12,21 @@ Hooks.once("init", () => {
   };
 });
 
-Hooks.on("renderSceneDirectory", (_app, html) => {
+Hooks.on("renderSceneDirectory", (app, html) => {
   if (!game.user?.isGM) return;
-  if (html.find(`.mapitas-open-browser`).length) return;
+  const root = resolveHtmlRoot(app, html);
+  if (!root) return;
+  if (root.querySelector(".mapitas-open-browser")) return;
 
-  const button = $(
-    `<button type="button" class="mapitas-open-browser">
-      <i class="fas fa-map"></i> Mapitas
-    </button>`
-  );
-  button.on("click", () => openMapitasBrowser());
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mapitas-open-browser";
+  button.innerHTML = `<i class="fas fa-map"></i> Mapitas`;
+  button.addEventListener("click", () => openMapitasBrowser());
 
-  const footer = html.find(".directory-footer");
-  if (footer.length) footer.prepend(button);
-  else html.prepend(button);
+  const footer = root.querySelector(".directory-footer");
+  if (footer) footer.prepend(button);
+  else root.prepend(button);
 });
 
 function openMapitasBrowser() {
@@ -341,4 +342,17 @@ async function ensureWorldSceneFolders(folderPath) {
 
 function normalizePath(path) {
   return String(path ?? "").replace(/\\/gu, "/").replace(/\/+/gu, "/").replace(/\/$/u, "");
+}
+
+function resolveHtmlRoot(app, html) {
+  if (html?.jquery) return html[0] ?? null;
+  if (html instanceof HTMLElement) return html;
+  if (Array.isArray(html) && html[0] instanceof HTMLElement) return html[0];
+
+  const fallback = app?.element;
+  if (fallback?.jquery) return fallback[0] ?? null;
+  if (fallback instanceof HTMLElement) return fallback;
+  if (Array.isArray(fallback) && fallback[0] instanceof HTMLElement) return fallback[0];
+
+  return null;
 }
