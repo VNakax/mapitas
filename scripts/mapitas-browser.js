@@ -12,20 +12,6 @@ Hooks.once("init", () => {
   };
 });
 
-Hooks.on("renderSceneDirectory", (app, html) => {
-  if (!game.user?.isGM) return;
-  installDirectoryButton(resolveHtmlRoot(app, html));
-});
-
-Hooks.on("renderSidebar", (app, html) => {
-  if (!game.user?.isGM) return;
-  const root = resolveHtmlRoot(app, html);
-  if (!root) return;
-
-  const sceneTab = root.querySelector("[data-tab='scenes'], .tab[data-tab='scenes'], #scenes");
-  installDirectoryButton(sceneTab);
-});
-
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user?.isGM) return;
 
@@ -388,43 +374,4 @@ function normalizePath(path) {
   } catch {
     return normalized;
   }
-}
-
-function installDirectoryButton(root) {
-  if (!(root instanceof HTMLElement)) return;
-  if (root.querySelector(".mapitas-open-browser")) return;
-
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "mapitas-open-browser";
-  button.innerHTML = `<i class="fas fa-map"></i> Mapitas`;
-  button.addEventListener("click", () => openMapitasBrowser());
-
-  const containers = [
-    ".header-actions",
-    ".directory-header",
-    ".action-buttons",
-    ".controls",
-    "header"
-  ];
-
-  const target = containers
-    .map((selector) => root.querySelector(selector))
-    .find((element) => element instanceof HTMLElement);
-
-  if (target) target.append(button);
-  else root.prepend(button);
-}
-
-function resolveHtmlRoot(app, html) {
-  if (html?.jquery) return html[0] ?? null;
-  if (html instanceof HTMLElement) return html;
-  if (Array.isArray(html) && html[0] instanceof HTMLElement) return html[0];
-
-  const fallback = app?.element;
-  if (fallback?.jquery) return fallback[0] ?? null;
-  if (fallback instanceof HTMLElement) return fallback;
-  if (Array.isArray(fallback) && fallback[0] instanceof HTMLElement) return fallback[0];
-
-  return null;
 }
