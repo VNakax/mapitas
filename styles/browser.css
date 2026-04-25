@@ -1,3 +1,13 @@
+.mapitas-directory-launch {
+  width: 100%;
+  padding: 0.4rem 0 0.55rem;
+}
+
+.mapitas-directory-button {
+  width: 100%;
+  min-height: 2.35rem;
+}
+
 .mapitas-shell {
   display: flex;
   flex-direction: column;
