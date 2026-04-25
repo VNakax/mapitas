@@ -135,12 +135,16 @@ class MapitasBrowser extends Application {
         ...entry,
         selected: entry.id === this.state.selectedSceneId,
         previewSrc: entry.preview || entry.thumb || entry.background,
-        folderLabel: entry.folderPath?.join(" / ") || "Sem pasta"
+        folderLabel: entry.folderPath?.join(" / ") || "Sem pasta",
+        previewWidth: Math.max(Number(entry.width) || 1, 1),
+        previewHeight: Math.max(Number(entry.height) || 1, 1)
       })),
       selectedScene: selectedEntry ? {
         ...selectedEntry,
         previewSrc: selectedEntry.preview || selectedEntry.thumb || selectedEntry.background,
-        folderLabel: selectedEntry.folderPath?.join(" / ") || "Sem pasta"
+        folderLabel: selectedEntry.folderPath?.join(" / ") || "Sem pasta",
+        previewWidth: Math.max(Number(selectedEntry.width) || 1, 1),
+        previewHeight: Math.max(Number(selectedEntry.height) || 1, 1)
       } : null
     };
   }
@@ -181,11 +185,8 @@ class MapitasBrowser extends Application {
       this.scheduleSearchRender();
     });
 
-    html.find("[data-action='search']").on("blur", () => {
-      this.state.focusSearch = false;
-    });
-
     html.find("[data-action='select-folder']").on("click", (event) => {
+      this.state.focusSearch = false;
       this.state.folderScrollTop = folderList?.scrollTop ?? this.state.folderScrollTop;
       this.state.resultsScrollTop = 0;
       this.state.selectedFolder = String(event.currentTarget.dataset.folder ?? "");
@@ -193,15 +194,13 @@ class MapitasBrowser extends Application {
     });
 
     html.find("[data-action='select-scene']").on("click", (event) => {
+      this.state.focusSearch = false;
       this.state.selectedSceneId = String(event.currentTarget.dataset.sceneId ?? "");
       this.render(false);
     });
 
-    html.find("[data-action='reload']").on("click", async () => {
-      await this.reloadCatalog();
-    });
-
     html.find("[data-action='import-scene']").on("click", async (event) => {
+      this.state.focusSearch = false;
       const sceneId = String(event.currentTarget.dataset.sceneId ?? "");
       const entry = this.catalog.entries.find((candidate) => candidate.id === sceneId);
       if (!entry) return;

@@ -6,9 +6,6 @@
     </div>
     <div class="mapitas-toolbar-meta">
       <span>{{visibleCount}} / {{totalEntries}} cenas</span>
-      <button type="button" class="mapitas-secondary-button" data-action="reload">
-        <i class="fas fa-rotate-right"></i> Recarregar
-      </button>
     </div>
   </header>
 
@@ -36,7 +33,13 @@
       <div class="mapitas-card-grid">
         {{#each scenes}}
         <article class="mapitas-card {{#if selected}}is-selected{{/if}}">
-          <button type="button" class="mapitas-card-preview" data-action="select-scene" data-scene-id="{{id}}">
+          <button
+            type="button"
+            class="mapitas-card-preview"
+            data-action="select-scene"
+            data-scene-id="{{id}}"
+            style="--preview-width: {{previewWidth}}; --preview-height: {{previewHeight}};"
+          >
             <img src="{{previewSrc}}" alt="{{name}}" loading="lazy">
           </button>
           <div class="mapitas-card-body">
@@ -61,7 +64,10 @@
 
     <aside class="mapitas-detail">
       {{#if selectedScene}}
-      <div class="mapitas-detail-preview">
+      <div
+        class="mapitas-detail-preview"
+        style="--preview-width: {{selectedScene.previewWidth}}; --preview-height: {{selectedScene.previewHeight}};"
+      >
         <img src="{{selectedScene.previewSrc}}" alt="{{selectedScene.name}}" loading="lazy">
       </div>
       <div class="mapitas-detail-body">
