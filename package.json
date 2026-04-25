@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "extract:catalog": "node ./tools/extract-mapitas-catalog.mjs"
+  },
+  "devDependencies": {
+    "level": "^10.0.0"
+  }
+}

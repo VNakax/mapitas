@@ -1,0 +1,210 @@
+.mapitas-open-browser {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.mapitas-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+}
+
+.mapitas-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mapitas-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-option) 82%, black 18%);
+}
+
+.mapitas-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  min-height: 2.5rem;
+}
+
+.mapitas-toolbar-meta {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.mapitas-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  gap: 0.75rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.mapitas-sidebar,
+.mapitas-results,
+.mapitas-detail {
+  min-height: 0;
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-bg-option) 88%, black 12%);
+}
+
+.mapitas-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.mapitas-sidebar-title {
+  padding: 0.75rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--color-border-light-primary);
+}
+
+.mapitas-folder-list {
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.mapitas-folder-button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.mapitas-folder-button.is-selected,
+.mapitas-folder-button:hover {
+  background: color-mix(in srgb, var(--color-shadow-primary) 16%, transparent);
+}
+
+.mapitas-count {
+  opacity: 0.7;
+}
+
+.mapitas-results {
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.mapitas-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.mapitas-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-bg-option) 94%, black 6%);
+}
+
+.mapitas-card.is-selected {
+  outline: 2px solid var(--color-shadow-primary);
+}
+
+.mapitas-card-preview {
+  border: 0;
+  padding: 0;
+  background: #111;
+  aspect-ratio: 1 / 1;
+}
+
+.mapitas-card-preview img,
+.mapitas-detail-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mapitas-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem;
+}
+
+.mapitas-card-title {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+}
+
+.mapitas-card-folder {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.mapitas-card-flags,
+.mapitas-detail-flags,
+.mapitas-detail-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mapitas-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.mapitas-detail-preview {
+  aspect-ratio: 1 / 1;
+  border-bottom: 1px solid var(--color-border-light-primary);
+  background: #111;
+}
+
+.mapitas-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+}
+
+.mapitas-detail-body h2 {
+  margin: 0;
+}
+
+.mapitas-detail-folder,
+.mapitas-detail-meta {
+  opacity: 0.75;
+}
+
+.mapitas-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.mapitas-primary-button,
+.mapitas-secondary-button {
+  min-height: 2.4rem;
+}
+
+.mapitas-empty-state {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  opacity: 0.8;
+}

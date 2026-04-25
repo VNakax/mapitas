@@ -1,0 +1,92 @@
+<section class="mapitas-shell">
+  <header class="mapitas-toolbar">
+    <div class="mapitas-search">
+      <i class="fas fa-search"></i>
+      <input type="search" value="{{query}}" placeholder="Buscar por nome, pasta ou variante" data-action="search">
+    </div>
+    <div class="mapitas-toolbar-meta">
+      <span>{{visibleCount}} / {{totalEntries}} cenas</span>
+      <button type="button" class="mapitas-secondary-button" data-action="reload">
+        <i class="fas fa-rotate-right"></i> Recarregar
+      </button>
+    </div>
+  </header>
+
+  <div class="mapitas-layout">
+    <aside class="mapitas-sidebar">
+      <div class="mapitas-sidebar-title">Pastas</div>
+      <div class="mapitas-folder-list">
+        {{#each folders}}
+        <button
+          type="button"
+          class="mapitas-folder-button {{#if selected}}is-selected{{/if}}"
+          data-action="select-folder"
+          data-folder="{{key}}"
+          style="padding-left: {{depth}}rem;"
+        >
+          <span>{{label}}</span>
+          <span class="mapitas-count">{{count}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </aside>
+
+    <section class="mapitas-results">
+      <div class="mapitas-card-grid">
+        {{#each scenes}}
+        <article class="mapitas-card {{#if selected}}is-selected{{/if}}">
+          <button type="button" class="mapitas-card-preview" data-action="select-scene" data-scene-id="{{id}}">
+            <img src="{{previewSrc}}" alt="{{name}}" loading="lazy">
+          </button>
+          <div class="mapitas-card-body">
+            <button type="button" class="mapitas-card-title" data-action="select-scene" data-scene-id="{{id}}">
+              {{name}}
+            </button>
+            <div class="mapitas-card-folder">{{folderLabel}}</div>
+            <div class="mapitas-card-flags">
+              {{#if hasWalls}}<span title="Walls"><i class="fas fa-university"></i></span>{{/if}}
+              {{#if hasLights}}<span title="Lights"><i class="far fa-lightbulb"></i></span>{{/if}}
+              {{#if hasDrawings}}<span title="Drawings"><i class="fas fa-pencil-alt"></i></span>{{/if}}
+              {{#if hasNotes}}<span title="Notes"><i class="fas fa-book-open"></i></span>{{/if}}
+            </div>
+          </div>
+        </article>
+        {{/each}}
+      </div>
+    </section>
+
+    <aside class="mapitas-detail">
+      {{#if selectedScene}}
+      <div class="mapitas-detail-preview">
+        <img src="{{selectedScene.previewSrc}}" alt="{{selectedScene.name}}" loading="lazy">
+      </div>
+      <div class="mapitas-detail-body">
+        <h2>{{selectedScene.name}}</h2>
+        <div class="mapitas-detail-folder">{{selectedScene.folderLabel}}</div>
+        <div class="mapitas-detail-meta">
+          <span>{{selectedScene.width}} x {{selectedScene.height}}</span>
+          {{#if selectedScene.grid}}
+          <span>Grid {{selectedScene.grid.size}}</span>
+          {{/if}}
+        </div>
+        <div class="mapitas-detail-variants">
+          {{#each selectedScene.variants}}
+          <span class="mapitas-pill">{{this}}</span>
+          {{/each}}
+        </div>
+        <div class="mapitas-detail-flags">
+          {{#if selectedScene.hasWalls}}<span class="mapitas-pill">Walls</span>{{/if}}
+          {{#if selectedScene.hasLights}}<span class="mapitas-pill">Lights</span>{{/if}}
+          {{#if selectedScene.hasDrawings}}<span class="mapitas-pill">Drawings</span>{{/if}}
+          {{#if selectedScene.hasNotes}}<span class="mapitas-pill">Notes</span>{{/if}}
+        </div>
+        <button type="button" class="mapitas-primary-button" data-action="import-scene" data-scene-id="{{selectedScene.id}}">
+          <i class="fas fa-file-import"></i> Importar Cena
+        </button>
+      </div>
+      {{else}}
+      <div class="mapitas-empty-state">Nenhuma cena encontrada.</div>
+      {{/if}}
+    </aside>
+  </div>
+</section>

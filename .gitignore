@@ -2,3 +2,6 @@
 Thumbs.db
 .DS_Store
 .git-backup-broken/
+mapitas/
+node_modules/
+.mapitas-extract-temp/

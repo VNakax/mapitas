@@ -1,6 +1,6 @@
 # Modulo dos Mapitas
 
-Modulo para Foundry VTT 13 que sincroniza a pasta `Data/Mapitas` em um compendium de cenas do mundo atual.
+Modulo para Foundry VTT 13 que oferece um catalogo com preview e importacao sob demanda de cenas para o mundo atual.
 
 ## Instalacao pelo Foundry
 
@@ -13,27 +13,21 @@ O campo `download` do manifesto aponta para o asset de release `modulo-dos-mapit
 ## Instalacao manual
 
 1. Copie a pasta `modulo-dos-mapitas` para `FoundryVTT/Data/modules/`.
-2. Garanta que os mapas estejam em `FoundryVTT/Data/Mapitas/`.
+2. Garanta que os assets estejam em `FoundryVTT/Data/Mapitas/czepeku/`.
 3. Ative o modulo no mundo desejado.
-4. Aguarde a primeira sincronizacao e importe as cenas do compendium `Mapitas`.
+4. Abra o navegador `Mapitas` no diretorio de cenas e importe apenas as cenas desejadas.
 
 ## Comportamento
 
-- O modulo procura arquivos suportados dentro de `Data/Mapitas`.
-- O compendium criado e do tipo `Scene` e pertence ao mundo atual.
-- Cada arquivo gera uma cena importavel apontando para o asset original em `Data/Mapitas`.
-- Novos arquivos sao adicionados e arquivos removidos saem do compendium na proxima sincronizacao.
-- Na primeira execucao em cada mundo, o modulo pede confirmacao antes de iniciar e pode limpar o compendium atual antes de reimportar.
-- As cenas sao agrupadas em folders dentro do compendium com base na estrutura util de pastas dos mapas.
-- A sincronizacao ocorre em lotes menores com pausas curtas entre operacoes para reduzir picos de requests no Foundry.
-- Durante a sincronizacao, o modulo mantem uma barra fixa no topo com progresso resumido, sem log detalhado por mapa.
-- O nome das cenas prioriza a pasta amigavel do mapa e acrescenta apenas variantes uteis, como `Night` ou `Gridless`.
-- O nome exibido da cena decodifica segmentos como `%20` para que espacos e outros caracteres aparecam de forma legivel.
-- Para mapas em imagem, o modulo reutiliza o proprio arquivo como `thumb` da cena para evitar geracao automatica de thumbnail quando possivel.
-- Quando existir um JSON de cena compativel ao lado do mapa ou em pastas de metadata conhecidas, o modulo tenta reaproveitar dimensoes, grid e elementos como walls/lights/drawings/notes.
+- O modulo carrega um catalogo embutido, com nome, pasta, metadados e preview das cenas.
+- A interface permite navegar por pastas, buscar por nome e importar uma cena sob demanda.
+- A cena importada e criada diretamente no mundo atual, sem sincronizar toda a biblioteca.
+- Quando a cena possui metadata no catalogo, o modulo reaproveita dimensoes, grid, walls, lights, drawings e notes.
+- O preview usa thumbs leves embutidas no modulo; quando uma thumb nao existir, a UI faz fallback para o background da cena.
 
-## Observacoes
+## Manutencao do catalogo
 
-- A primeira sincronizacao pode demorar bastante em bibliotecas grandes.
-- Sincronizacoes seguintes reutilizam as cenas ja existentes e tendem a ser bem mais leves.
-- Extensoes suportadas: `webp`, `webm`, `png`, `jpg`, `jpeg`, `avif`, `apng`, `mp4`, `m4v`, `mov`.
+- O script `npm run extract:catalog` e uma ferramenta de manutencao para regenerar `catalog/` a partir do mundo-base `mapitas/`.
+- O extrator aproveita os thumbs do proprio mundo-base em `mapitas/assets/scenes/` para preencher `catalog/previews/`.
+- O fluxo normal de uso do modulo nao depende da pasta `mapitas/`.
+- Extensoes suportadas para backgrounds: `webp`, `webm`, `png`, `jpg`, `jpeg`, `avif`, `apng`, `mp4`, `m4v`, `mov`.
