@@ -134,14 +134,14 @@ class MapitasBrowser extends Application {
       scenes: visibleEntries.map((entry) => ({
         ...entry,
         selected: entry.id === this.state.selectedSceneId,
-        previewSrc: entry.preview || entry.thumb || entry.background,
+        previewSrc: entry.background || entry.preview || entry.thumb,
         folderLabel: entry.folderPath?.join(" / ") || "Sem pasta",
         previewWidth: Math.max(Number(entry.width) || 1, 1),
         previewHeight: Math.max(Number(entry.height) || 1, 1)
       })),
       selectedScene: selectedEntry ? {
         ...selectedEntry,
-        previewSrc: selectedEntry.preview || selectedEntry.thumb || selectedEntry.background,
+        previewSrc: selectedEntry.background || selectedEntry.preview || selectedEntry.thumb,
         folderLabel: selectedEntry.folderPath?.join(" / ") || "Sem pasta",
         previewWidth: Math.max(Number(selectedEntry.width) || 1, 1),
         previewHeight: Math.max(Number(selectedEntry.height) || 1, 1)
