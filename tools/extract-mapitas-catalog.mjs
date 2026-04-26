@@ -1,20 +1,24 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Level } from "level";
+import sharp from "sharp";
 
 const MODULE_ID = "modulo-dos-mapitas";
 const DEFAULT_WORLD_ROOT = path.resolve("mapitas");
 const DEFAULT_OUTPUT_ROOT = path.resolve("catalog");
+const DEFAULT_ASSETS_ROOT = path.resolve("Mapitas");
 const EMBEDDED_TYPES = new Set(["walls", "lights", "drawings", "notes", "tiles", "sounds", "regions"]);
+const PREVIEW_FOLDER_NAME = "previews-clean";
 
 const options = parseArgs(process.argv.slice(2));
 const worldRoot = path.resolve(options.world ?? DEFAULT_WORLD_ROOT);
 const outputRoot = path.resolve(options.out ?? DEFAULT_OUTPUT_ROOT);
+const assetsRoot = path.resolve(options.assets ?? DEFAULT_ASSETS_ROOT);
 
 await fs.mkdir(path.join(outputRoot, "scenes"), { recursive: true });
-await fs.mkdir(path.join(outputRoot, "previews"), { recursive: true });
+await fs.mkdir(path.join(outputRoot, PREVIEW_FOLDER_NAME), { recursive: true });
 await clearDirectory(path.join(outputRoot, "scenes"));
-await clearDirectory(path.join(outputRoot, "previews"));
+await clearDirectory(path.join(outputRoot, PREVIEW_FOLDER_NAME));
 
 const folders = await readFolders(path.join(worldRoot, "data", "folders"));
 const { scenes, embedded } = await readScenes(path.join(worldRoot, "data", "scenes"));
@@ -30,9 +34,9 @@ for (const scene of scenes.values()) {
   const slug = `${publisherId}-${scene._id}`;
   const folderPath = normalizeFolderPath([titleCase(publisherId), ...resolveFolderPath(scene.folder, folders)]);
   const sceneJsonPath = `modules/${MODULE_ID}/catalog/scenes/${slug}.json`;
-  const previewRelPath = `modules/${MODULE_ID}/catalog/previews/${slug}.webp`;
-  const previewAbsPath = path.join(outputRoot, "previews", `${slug}.webp`);
-  const preview = await copyPreview(scene.thumb, worldRoot, previewAbsPath);
+  const previewRelPath = `modules/${MODULE_ID}/catalog/${PREVIEW_FOLDER_NAME}/${slug}.webp`;
+  const previewAbsPath = path.join(outputRoot, PREVIEW_FOLDER_NAME, `${slug}.webp`);
+  const preview = await copyPreview(scene.thumb, mappedBackground, worldRoot, assetsRoot, previewAbsPath);
   const sceneEmbedded = embedded.get(scene._id) ?? new Map();
 
   const sceneData = normalizeScene(scene, mappedBackground, folderPath, sceneEmbedded);
@@ -189,13 +193,53 @@ function normalizeScene(scene, backgroundSrc, folderPath, embedded) {
   return normalized;
 }
 
-async function copyPreview(sceneThumb, worldRootPath, previewAbsPath) {
+async function copyPreview(sceneThumb, backgroundPath, worldRootPath, assetsRootPath, previewAbsPath) {
+  const assetSource = path.join(assetsRootPath, ...normalizePath(backgroundPath).split("/").slice(1));
+  if (await pathExists(assetSource)) {
+    try {
+      await sharp(assetSource)
+        .resize({
+          width: 640,
+          height: 640,
+          fit: "inside",
+          withoutEnlargement: true
+        })
+        .webp({
+          quality: 72
+        })
+        .toFile(previewAbsPath);
+      return true;
+    } catch {
+      // Fall back to existing scene thumbs below.
+    }
+  }
+
   const match = normalizePath(sceneThumb).match(/^worlds\/[^/]+\/assets\/scenes\/(.+)$/u);
   if (!match) return false;
 
   const source = path.join(worldRootPath, "assets", "scenes", match[1]);
   try {
-    await fs.copyFile(source, previewAbsPath);
+    await sharp(source)
+      .trim()
+      .resize({
+        width: 640,
+        height: 640,
+        fit: "inside",
+        withoutEnlargement: true
+      })
+      .webp({
+        quality: 72
+      })
+      .toFile(previewAbsPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
     return true;
   } catch {
     return false;
